@@ -257,6 +257,12 @@ impl<B: ChainApi> Pool<B> {
 		Ok(())
 	}
 
+	/// Move transactions that missed it's queue (odd / even)
+	/// in the previous block to ready status.
+	pub fn import_queue_futures(&self) {
+		self.pool.write().import_queue_futures();
+	}
+
 	/// Prunes ready transactions that provide given list of tags.
 	///
 	/// Given tags are assumed to be always provided now, so all transactions
