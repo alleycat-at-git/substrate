@@ -1,5 +1,5 @@
-use support::{decl_module, decl_storage, decl_event, StorageValue, dispatch::Result};
-use node_primitives::BlockNumber;
+use support::{decl_module, decl_storage, decl_event, StorageValue};
+use runtime_primitives::traits::As;
 
 pub trait Trait: system::Trait {
 	type Event: From<Event> + Into<<Self as system::Trait>::Event>;
@@ -7,7 +7,7 @@ pub trait Trait: system::Trait {
 
 decl_storage! {
     trait Store for Module<T: Trait> as QueueManager {
-        pub LastBlock: <T as system::Trait>::BlockNumber;
+        pub LastBlock: <T as system::Trait>::BlockNumber = Default::default();
     }
 }
 
@@ -27,14 +27,9 @@ decl_event!(
 
 impl<T: Trait> Module<T> {
     pub fn verify_queue(address: &substrate_primitives::sr25519::Public) -> bool {
-		// let is_odd_block = !<IsOddQueue<T>>::get().expect("Unexpected missing storage value for IsOddQueue");
-
-		// if let Some(sender) = transaction.sender() {
-		// 	let last_bit = sender.as_slice.last() & 1
-		// 	let oddity = is_odd_block as u32;
-		// 	return (last_bit ^ oddity) == 0;
-		// }
-
-		return false;
+		let current_block_number: u64 = <LastBlock<T>>::get().as_() + 1;
+		let current_block_number_last_bit = (current_block_number & 1) as u8;
+		let last_address_bit = address.as_array_ref()[31] & 1;
+		return (current_block_number_last_bit ^ last_address_bit) == 0;
     }
 }

@@ -308,19 +308,31 @@ impl_runtime_apis! {
 
 	impl client_api::TaggedTransactionQueue<Block> for Runtime {
 		fn validate_transaction(utx: <Block as BlockT>::Extrinsic) -> TransactionValidity {
-			// let tx = <<Block as BlockT>::Extrinsic as Checkable<Checked=CheckedExtrinsic<AccountId, Index, Call>>>::check(&utx, &Default::default());
-			// let tx = <<Block as BlockT>::Extrinsic as Checkable<CheckedExtrinsic<AccountId, Index, Call>>>::check(utx, &Default::default());
-			let ctx: system::ChainContext<Runtime> = Default::default();
-			if let Ok(tx) = utx.clone().check(&ctx) {
-				if let Some(sender) = tx.sender() {
-					if <queue_manager::Module<Runtime>>::verify_queue(sender) {
-						// let last_bit = sender.as_array_ref()[31] & 1;
-						let x = 1;
-					}
+			// Run default transaction check
+			let res = Executive::validate_transaction(utx.clone());
 
+			// Discard invalid transactions early
+			match res {
+				TransactionValidity::Valid { .. } => (),
+				_ => return res,
+			}
+
+			let ctx: system::ChainContext<Runtime> = Default::default();
+			// Transaction is guaranteed to pass checks and to have sender by
+			// `Executive::validate_transaction` method above.
+			// Therefore we can safely use `expect` here
+			let tx = utx.check(&ctx).expect("Unexpected invalid transaction");
+			let sender = tx.sender().expect("Unexpected missing sender");
+			if !<queue_manager::Module<Runtime>>::verify_queue(sender) {
+				// Wait for one block and rerun the checks
+				return TransactionValidity::Valid {
+					priority: 0,
+					requires: Vec::new(),
+					provides: Vec::new(),
+					longevity: 1,
 				}
-			};
-			Executive::validate_transaction(utx)
+			}
+			res
 		}
 	}
 
