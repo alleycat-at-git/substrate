@@ -323,11 +323,12 @@ impl_runtime_apis! {
 			// Therefore we can safely use `expect` here
 			let tx = utx.check(&ctx).expect("Unexpected invalid transaction");
 			let sender = tx.sender().expect("Unexpected missing sender");
-			if !<queue_manager::Module<Runtime>>::verify_queue(sender) {
+			if <queue_manager::Module<Runtime>>::is_wrong_queue(sender) {
 				// Wait for one block and rerun the checks
 				return TransactionValidity::Valid {
 					priority: 0,
-					requires: Vec::new(),
+					// Some tag that will never be emitted
+					requires: [[1].to_vec()].to_vec(),
 					provides: Vec::new(),
 					longevity: 1,
 				}

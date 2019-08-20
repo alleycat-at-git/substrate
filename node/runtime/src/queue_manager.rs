@@ -26,10 +26,10 @@ decl_event!(
 );
 
 impl<T: Trait> Module<T> {
-    pub fn verify_queue(address: &substrate_primitives::sr25519::Public) -> bool {
-		let current_block_number: u64 = <LastBlock<T>>::get().as_() + 1;
+    pub fn is_wrong_queue(address: &substrate_primitives::sr25519::Public) -> bool {
+		let current_block_number: u64 = <LastBlock<T>>::get().as_().saturating_add(1);
 		let current_block_number_last_bit = (current_block_number & 1) as u8;
 		let last_address_bit = address.as_array_ref()[31] & 1;
-		return (current_block_number_last_bit ^ last_address_bit) == 0;
+		return (current_block_number_last_bit ^ last_address_bit) == 1;
     }
 }
