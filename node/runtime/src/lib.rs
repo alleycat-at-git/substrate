@@ -34,7 +34,8 @@ use client::{
 use runtime_primitives::{ApplyResult, generic, create_runtime_str};
 use runtime_primitives::transaction_validity::TransactionValidity;
 use runtime_primitives::traits::{
-	BlakeTwo256, Block as BlockT, DigestFor, NumberFor, StaticLookup, AuthorityIdFor, Convert
+	BlakeTwo256, Block as BlockT, DigestFor, NumberFor, StaticLookup, AuthorityIdFor, Convert,
+	Checkable, Applyable
 };
 use version::RuntimeVersion;
 use council::{motions as council_motions, voting as council_voting};
@@ -42,7 +43,7 @@ use council::{motions as council_motions, voting as council_voting};
 use council::seats as council_seats;
 #[cfg(any(feature = "std", test))]
 use version::NativeVersion;
-use substrate_primitives::OpaqueMetadata;
+use substrate_primitives::{OpaqueMetadata, QUEUE_TAG};
 
 #[cfg(any(feature = "std", test))]
 pub use runtime_primitives::BuildStorage;
@@ -52,6 +53,8 @@ pub use balances::Call as BalancesCall;
 pub use runtime_primitives::{Permill, Perbill};
 pub use support::StorageValue;
 pub use staking::StakerStatus;
+
+pub mod queue_manager;
 
 /// Runtime version.
 pub const VERSION: RuntimeVersion = RuntimeVersion {
@@ -197,6 +200,10 @@ impl sudo::Trait for Runtime {
 	type Proposal = Call;
 }
 
+impl queue_manager::Trait for Runtime {
+    type Event = Event;
+}
+
 impl grandpa::Trait for Runtime {
 	type SessionKey = AuthorityId;
 	type Log = Log;
@@ -231,6 +238,7 @@ construct_runtime!(
 		Treasury: treasury,
 		Contract: contract::{Module, Call, Storage, Config<T>, Event<T>},
 		Sudo: sudo,
+		QueueManager: queue_manager::{Module, Call, Storage, Event},
 	}
 );
 
@@ -299,8 +307,33 @@ impl_runtime_apis! {
 	}
 
 	impl client_api::TaggedTransactionQueue<Block> for Runtime {
-		fn validate_transaction(tx: <Block as BlockT>::Extrinsic) -> TransactionValidity {
-			Executive::validate_transaction(tx)
+		fn validate_transaction(utx: <Block as BlockT>::Extrinsic) -> TransactionValidity {
+			// Run default transaction check
+			let res = Executive::validate_transaction(utx.clone());
+
+			// Discard invalid transactions early
+			match res {
+				TransactionValidity::Valid { .. } => (),
+				_ => return res,
+			}
+
+			let ctx: system::ChainContext<Runtime> = Default::default();
+			// Transaction is guaranteed to pass checks and to have sender by
+			// `Executive::validate_transaction` method above.
+			// Therefore we can safely use `expect` here
+			let tx = utx.check(&ctx).expect("Unexpected invalid transaction");
+			let sender = tx.sender().expect("Unexpected missing sender");
+			if <queue_manager::Module<Runtime>>::is_wrong_queue(sender) {
+				// QUEUE_TAG is provided each block by transaction pool
+				// Therefore we postpone the transaction to the next block
+				return TransactionValidity::Valid {
+					priority: 0,
+					requires: vec![QUEUE_TAG.to_vec()],
+					provides: vec![],
+					longevity: 5,
+				}
+			}
+			res
 		}
 	}
 
