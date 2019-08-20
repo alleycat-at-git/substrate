@@ -34,7 +34,8 @@ use client::{
 use runtime_primitives::{ApplyResult, generic, create_runtime_str};
 use runtime_primitives::transaction_validity::TransactionValidity;
 use runtime_primitives::traits::{
-	BlakeTwo256, Block as BlockT, DigestFor, NumberFor, StaticLookup, AuthorityIdFor, Convert
+	BlakeTwo256, Block as BlockT, DigestFor, NumberFor, StaticLookup, AuthorityIdFor, Convert,
+	Checkable, Applyable
 };
 use version::RuntimeVersion;
 use council::{motions as council_motions, voting as council_voting};
@@ -53,10 +54,12 @@ pub use runtime_primitives::{Permill, Perbill};
 pub use support::StorageValue;
 pub use staking::StakerStatus;
 
+pub mod queue_manager;
+
 /// Runtime version.
 pub const VERSION: RuntimeVersion = RuntimeVersion {
 	spec_name: create_runtime_str!("node"),
-	impl_name: create_runtime_str!("substrate-node"),
+	impl_name: create_runtime_str!("substrate-queue-manager"),
 	authoring_version: 10,
 	spec_version: 60,
 	impl_version: 60,
@@ -197,6 +200,10 @@ impl sudo::Trait for Runtime {
 	type Proposal = Call;
 }
 
+impl queue_manager::Trait for Runtime {
+    type Event = Event;
+}
+
 impl grandpa::Trait for Runtime {
 	type SessionKey = AuthorityId;
 	type Log = Log;
@@ -231,6 +238,7 @@ construct_runtime!(
 		Treasury: treasury,
 		Contract: contract::{Module, Call, Storage, Config<T>, Event<T>},
 		Sudo: sudo,
+		QueueManager: queue_manager::{Module, Call, Storage, Event},
 	}
 );
 
@@ -299,8 +307,20 @@ impl_runtime_apis! {
 	}
 
 	impl client_api::TaggedTransactionQueue<Block> for Runtime {
-		fn validate_transaction(tx: <Block as BlockT>::Extrinsic) -> TransactionValidity {
-			Executive::validate_transaction(tx)
+		fn validate_transaction(utx: <Block as BlockT>::Extrinsic) -> TransactionValidity {
+			// let tx = <<Block as BlockT>::Extrinsic as Checkable<Checked=CheckedExtrinsic<AccountId, Index, Call>>>::check(&utx, &Default::default());
+			// let tx = <<Block as BlockT>::Extrinsic as Checkable<CheckedExtrinsic<AccountId, Index, Call>>>::check(utx, &Default::default());
+			let ctx: system::ChainContext<Runtime> = Default::default();
+			if let Ok(tx) = utx.clone().check(&ctx) {
+				if let Some(sender) = tx.sender() {
+					if <queue_manager::Module<Runtime>>::verify_queue(sender) {
+						// let last_bit = sender.as_array_ref()[31] & 1;
+						let x = 1;
+					}
+
+				}
+			};
+			Executive::validate_transaction(utx)
 		}
 	}
 
