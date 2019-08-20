@@ -6,7 +6,7 @@ description = "Substrate State Machine"
 edition = "2018"
 
 [dependencies]
-hex-literal = "0.1.0"
+hex-literal = "0.2"
 log = "0.4"
 parking_lot = "0.7.1"
 heapsize = "0.4"
