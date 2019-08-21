@@ -328,9 +328,9 @@ impl_runtime_apis! {
 				return TransactionValidity::Valid {
 					priority: 0,
 					// Some tag that will never be emitted
-					requires: [[1].to_vec()].to_vec(),
-					provides: Vec::new(),
-					longevity: 1,
+					requires: vec![vec![1, 2, 3]],
+					provides: vec![],
+					longevity: 5,
 				}
 			}
 			res

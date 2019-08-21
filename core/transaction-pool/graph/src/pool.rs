@@ -257,6 +257,10 @@ impl<B: ChainApi> Pool<B> {
 		Ok(())
 	}
 
+	pub fn requeue_special_futures(&self) {
+		self.pool.write().requeue_special_futures();
+	}
+
 	/// Prunes ready transactions that provide given list of tags.
 	///
 	/// Given tags are assumed to be always provided now, so all transactions

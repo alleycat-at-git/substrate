@@ -40,6 +40,8 @@ use crate::error;
 use crate::future::{FutureTransactions, WaitingTransaction};
 use crate::ready::ReadyTransactions;
 
+pub const QUEUE_TAG: &[u8] = &[1, 2, 3];
+
 /// Successful import result.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Imported<Hash, Ex> {
@@ -345,6 +347,23 @@ impl<Hash: hash::Hash + Member + Serialize, Ex: ::std::fmt::Debug> BasePool<Hash
 		}
 
 		removed
+	}
+
+	pub fn requeue_special_futures(&mut self) {
+		let to_import = self
+			.future
+			.satisfy_tags(vec![QUEUE_TAG.to_vec()].into_iter());
+		let mut requeued = 0;
+		let requeued_total = to_import.len();
+		for tx in to_import {
+			debug!(target: "txpool", "Requeueing {:?}", tx);
+			let hash = tx.transaction.hash.clone();
+			match self.import_to_ready(tx) {
+				Err(e) => warn!(target: "txpool", "[{:?}] Failed to promote requeue special futures: {:?}", hash, e),
+				_ => requeued += 1,
+			};
+		}
+		debug!(target: "txpool", "Requeued {}/{} transactions from futures", requeued, requeued_total);
 	}
 
 	/// Removes all transactions represented by the hashes and all other transactions
