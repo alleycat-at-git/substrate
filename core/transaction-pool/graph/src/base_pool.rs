@@ -28,7 +28,7 @@ use std::{
 use error_chain::bail;
 use log::{trace, debug, warn};
 use serde::Serialize;
-use substrate_primitives::hexdisplay::HexDisplay;
+use substrate_primitives::{hexdisplay::HexDisplay, QUEUE_TAG};
 use sr_primitives::traits::Member;
 use sr_primitives::transaction_validity::{
 	TransactionTag as Tag,
@@ -39,8 +39,6 @@ use sr_primitives::transaction_validity::{
 use crate::error;
 use crate::future::{FutureTransactions, WaitingTransaction};
 use crate::ready::ReadyTransactions;
-
-pub const QUEUE_TAG: &[u8] = &[1, 2, 3];
 
 /// Successful import result.
 #[derive(Debug, PartialEq, Eq)]
@@ -349,7 +347,9 @@ impl<Hash: hash::Hash + Member + Serialize, Ex: ::std::fmt::Debug> BasePool<Hash
 		removed
 	}
 
-	pub fn requeue_special_futures(&mut self) {
+	/// Move transactions that missed it's queue (odd / even)
+	/// in the previous block to ready status.
+	pub fn import_queue_futures(&mut self) {
 		let to_import = self
 			.future
 			.satisfy_tags(vec![QUEUE_TAG.to_vec()].into_iter());

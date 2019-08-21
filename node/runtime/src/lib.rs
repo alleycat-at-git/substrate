@@ -43,7 +43,7 @@ use council::{motions as council_motions, voting as council_voting};
 use council::seats as council_seats;
 #[cfg(any(feature = "std", test))]
 use version::NativeVersion;
-use substrate_primitives::OpaqueMetadata;
+use substrate_primitives::{OpaqueMetadata, QUEUE_TAG};
 
 #[cfg(any(feature = "std", test))]
 pub use runtime_primitives::BuildStorage;
@@ -328,7 +328,7 @@ impl_runtime_apis! {
 				return TransactionValidity::Valid {
 					priority: 0,
 					// Some tag that will never be emitted
-					requires: vec![vec![1, 2, 3]],
+					requires: vec![QUEUE_TAG.to_vec()],
 					provides: vec![],
 					longevity: 5,
 				}
