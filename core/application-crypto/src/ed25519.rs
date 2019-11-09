@@ -23,11 +23,15 @@ pub use primitives::ed25519::*;
 mod app {
 	use primitives::testing::ED25519;
 	crate::app_crypto!(super, ED25519);
+
+	impl crate::traits::BoundToRuntimeAppPublic for Public {
+		type Public = Self;
+	}
 }
 
 pub use app::Public as AppPublic;
 pub use app::Signature as AppSignature;
-#[cfg(feature="std")]
+#[cfg(feature = "full_crypto")]
 pub use app::Pair as AppPair;
 
 impl RuntimePublic for Public {
@@ -53,14 +57,7 @@ impl RuntimePublic for Public {
 #[cfg(test)]
 mod tests {
 	use sr_primitives::{generic::BlockId, traits::ProvideRuntimeApi};
-	use primitives::{
-				testing::{
-						KeyStore,
-						ED25519,
-				},
-				crypto::Pair,
-				traits::BareCryptoStore as _,
-		};
+	use primitives::{testing::{KeyStore, ED25519}, crypto::Pair};
 	use test_client::{
 		TestClientBuilder, DefaultTestClientBuilderExt, TestClientBuilderExt,
 		runtime::{TestAPI, app_crypto::ed25519::{AppPair, AppPublic}},

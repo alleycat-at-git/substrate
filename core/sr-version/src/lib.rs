@@ -62,8 +62,8 @@ macro_rules! create_apis_vec {
 /// This triplet have different semantics and mis-interpretation could cause problems.
 /// In particular: bug fixes should result in an increment of `spec_version` and possibly `authoring_version`,
 /// absolutely not `impl_version` since they change the semantics of the runtime.
-#[derive(Clone, PartialEq, Eq, Encode, Default)]
-#[cfg_attr(feature = "std", derive(Debug, Serialize, Deserialize, Decode))]
+#[derive(Clone, PartialEq, Eq, Encode, Default, sr_primitives::RuntimeDebug)]
+#[cfg_attr(feature = "std", derive(Serialize, Deserialize, Decode))]
 #[cfg_attr(feature = "std", serde(rename_all = "camelCase"))]
 pub struct RuntimeVersion {
 	/// Identifies the different Substrate runtimes. There'll be at least polkadot and node.
@@ -147,7 +147,7 @@ impl RuntimeVersion {
 }
 
 #[cfg(feature = "std")]
-#[cfg_attr(feature = "std", derive(Debug))]
+#[derive(Debug)]
 pub struct NativeVersion {
 	/// Basic runtime version info.
 	pub runtime_version: RuntimeVersion,
@@ -188,10 +188,10 @@ mod apis_serialize {
 		seq.end()
 	}
 
-	pub fn serialize_bytesref<S>(apis: &&super::ApiId, ser: S) -> Result<S::Ok, S::Error> where
+	pub fn serialize_bytesref<S>(&apis: &&super::ApiId, ser: S) -> Result<S::Ok, S::Error> where
 		S: Serializer,
 	{
-		bytes::serialize(*apis, ser)
+		bytes::serialize(apis, ser)
 	}
 
 	#[derive(Deserialize)]
@@ -228,9 +228,8 @@ mod apis_serialize {
 	pub fn deserialize_bytes<'de, D>(d: D) -> Result<super::ApiId, D::Error> where
 		D: de::Deserializer<'de>
 	{
-		let bytes = bytes::deserialize_check_len(d, bytes::ExpectedLen::Exact(8))?;
 		let mut arr = [0; 8];
-		arr.copy_from_slice(&bytes);
+		bytes::deserialize_check_len(d, bytes::ExpectedLen::Exact(&mut arr[..]))?;
 		Ok(arr)
 	}
 }

@@ -29,6 +29,7 @@ use service::{
 	AbstractService,
 	ChainSpec,
 	Configuration,
+	config::DatabaseConfig,
 	Roles,
 	Error,
 };
@@ -159,6 +160,7 @@ fn node_config<G, E: Clone> (
 			enable_mdns: false,
 			wasm_external_transport: None,
 		},
+		max_parallel_downloads: NetworkConfiguration::default().max_parallel_downloads,
 	};
 
 	Configuration {
@@ -168,16 +170,20 @@ fn node_config<G, E: Clone> (
 		roles: role,
 		transaction_pool: Default::default(),
 		network: network_config,
-		keystore_path: root.join("key"),
+		keystore_path: Some(root.join("key")),
 		keystore_password: None,
-		database_path: root.join("db"),
-		database_cache_size: None,
+		config_dir: Some(root.clone()),
+		database: DatabaseConfig::Path {
+			path: root.join("db"),
+			cache_size: None
+		},
 		state_cache_size: 16777216,
 		state_cache_child_ratio: None,
 		pruning: Default::default(),
 		chain_spec: (*spec).clone(),
 		custom: Default::default(),
 		name: format!("Node {}", index),
+		wasm_method: service::config::WasmExecutionMethod::Interpreted,
 		execution_strategies: Default::default(),
 		rpc_http: None,
 		rpc_ws: None,
@@ -187,6 +193,7 @@ fn node_config<G, E: Clone> (
 		telemetry_external_transport: None,
 		default_heap_pages: None,
 		offchain_worker: false,
+		sentry_mode: false,
 		force_authoring: false,
 		disable_grandpa: false,
 		dev_key_seed: key_seed,
@@ -445,7 +452,7 @@ pub fn sync<G, E, Fb, F, Lb, L, B, ExF, U>(
 	let first_user_data = &network.full_nodes[0].2;
 	let best_block = BlockId::number(first_service.get().client().info().chain.best_number);
 	let extrinsic = extrinsic_factory(&first_service.get(), first_user_data);
-	first_service.get().transaction_pool().submit_one(&best_block, extrinsic).unwrap();
+	futures03::executor::block_on(first_service.get().transaction_pool().submit_one(&best_block, extrinsic)).unwrap();
 	network.run_until_all_full(
 		|_index, service| service.get().transaction_pool().ready().count() == 1,
 		|_index, _service| true,

@@ -90,7 +90,7 @@ use rstd::prelude::*;
 use sr_primitives::{
 	traits::{StaticLookup, Dispatchable}, weights::SimpleDispatchInfo, DispatchError,
 };
-use support::{StorageValue, Parameter, decl_module, decl_event, decl_storage, ensure};
+use support::{Parameter, decl_module, decl_event, decl_storage, ensure};
 use system::ensure_signed;
 
 pub trait Trait: system::Trait {
@@ -200,6 +200,6 @@ decl_event!(
 decl_storage! {
 	trait Store for Module<T: Trait> as Sudo {
 		/// The `AccountId` of the sudo key.
-		Key get(key) config(): T::AccountId;
+		Key get(fn key) config(): T::AccountId;
 	}
 }

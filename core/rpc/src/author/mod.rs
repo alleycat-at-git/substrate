@@ -20,13 +20,17 @@
 mod tests;
 
 use std::{sync::Arc, convert::TryInto};
+use futures03::future::{FutureExt, TryFutureExt};
+use log::warn;
 
 use client::{self, Client};
-use rpc::futures::{Sink, Future};
-use futures03::{StreamExt as _, compat::Compat};
+use rpc::futures::{
+	Sink, Future,
+	future::result,
+};
+use futures03::{StreamExt as _, compat::Compat, future::ready};
 use api::Subscriptions;
 use jsonrpc_pubsub::{typed::Subscriber, SubscriptionId};
-use log::warn;
 use codec::{Encode, Decode};
 use primitives::{Bytes, Blake2Hasher, H256, traits::BareCryptoStorePtr};
 use sr_primitives::{generic, traits::{self, ProvideRuntimeApi}};
@@ -44,7 +48,7 @@ use session::SessionKeys;
 
 /// Re-export the API for backward compatibility.
 pub use api::author::*;
-use self::error::{Error, Result};
+use self::error::{Error, FutureResult, Result};
 
 /// Authoring API
 pub struct Author<B, E, P, RA> where P: PoolChainApi + Sync + Send + 'static {
@@ -108,15 +112,19 @@ impl<B, E, P, RA> AuthorApi<ExHash<P>, BlockHash<P>> for Author<B, E, P, RA> whe
 		).map(Into::into).map_err(|e| Error::Client(Box::new(e)))
 	}
 
-	fn submit_extrinsic(&self, ext: Bytes) -> Result<ExHash<P>> {
-		let xt = Decode::decode(&mut &ext[..])?;
+	fn submit_extrinsic(&self, ext: Bytes) -> FutureResult<ExHash<P>> {
+		let xt = match Decode::decode(&mut &ext[..]) {
+			Ok(xt) => xt,
+			Err(err) => return Box::new(result(Err(err.into()))),
+		};
 		let best_block_hash = self.client.info().chain.best_hash;
-		self.pool
+		Box::new(self.pool
 			.submit_one(&generic::BlockId::hash(best_block_hash), xt)
+			.compat()
 			.map_err(|e| e.into_pool_error()
 				.map(Into::into)
-				.unwrap_or_else(|e| error::Error::Verification(Box::new(e)).into())
-			)
+				.unwrap_or_else(|e| error::Error::Verification(Box::new(e)).into()))
+		)
 	}
 
 	fn pending_extrinsics(&self) -> Result<Vec<Bytes>> {
@@ -151,30 +159,46 @@ impl<B, E, P, RA> AuthorApi<ExHash<P>, BlockHash<P>> for Author<B, E, P, RA> whe
 	) {
 		let submit = || -> Result<_> {
 			let best_block_hash = self.client.info().chain.best_hash;
-			let dxt = <<P as PoolChainApi>::Block as traits::Block>::Extrinsic::decode(&mut &xt[..])?;
-			self.pool
-				.submit_and_watch(&generic::BlockId::hash(best_block_hash), dxt)
-				.map_err(|e| e.into_pool_error()
-					.map(Into::into)
-					.unwrap_or_else(|e| error::Error::Verification(Box::new(e)).into())
-				)
+			let dxt = <<P as PoolChainApi>::Block as traits::Block>::Extrinsic::decode(&mut &xt[..])
+				.map_err(error::Error::from)?;
+			Ok(
+				self.pool
+					.submit_and_watch(&generic::BlockId::hash(best_block_hash), dxt)
+					.map_err(|e| e.into_pool_error()
+						.map(error::Error::from)
+						.unwrap_or_else(|e| error::Error::Verification(Box::new(e)).into())
+					)
+			)
 		};
 
-		let watcher = match submit() {
-			Ok(watcher) => watcher,
-			Err(err) => {
-				// reject the subscriber (ignore errors - we don't care if subscriber is no longer there).
-				let _ = subscriber.reject(err.into());
-				return;
-			},
-		};
+		let subscriptions = self.subscriptions.clone();
+		let future = ready(submit())
+			.and_then(|res| res)
+			// convert the watcher into a `Stream`
+			.map(|res| res.map(|watcher| watcher.into_stream().map(|v| Ok::<_, ()>(Ok(v)))))
+			// now handle the import result,
+			// start a new subscrition
+			.map(move |result| match result {
+				Ok(watcher) => {
+					subscriptions.add(subscriber, move |sink| {
+						sink
+							.sink_map_err(|_| unimplemented!())
+							.send_all(Compat::new(watcher))
+							.map(|_| ())
+					});
+				},
+				Err(err) => {
+					warn!("Failed to submit extrinsic: {}", err);
+					// reject the subscriber (ignore errors - we don't care if subscriber is no longer there).
+					let _ = subscriber.reject(err.into());
+				},
+			});
 
-		self.subscriptions.add(subscriber, move |sink| {
-			sink
-				.sink_map_err(|e| warn!("Error sending notifications: {:?}", e))
-				.send_all(Compat::new(watcher.into_stream().map(|v| Ok::<_, ()>(Ok(v)))))
-				.map(|_| ())
-		})
+		let res = self.subscriptions.executor()
+			.execute(Box::new(Compat::new(future.map(|_| Ok(())))));
+		if res.is_err() {
+			warn!("Error spawning subscription RPC task.");
+		}
 	}
 
 	fn unwatch_extrinsic(&self, _metadata: Option<Self::Metadata>, id: SubscriptionId) -> Result<bool> {

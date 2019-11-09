@@ -148,10 +148,10 @@ pub trait Trait: timestamp::Trait {
 decl_storage! {
 	trait Store for Module<T: Trait> as Aura {
 		/// The last timestamp.
-		LastTimestamp get(last) build(|_| 0.into()): T::Moment;
+		LastTimestamp get(fn last) build(|_| 0.into()): T::Moment;
 
 		/// The current authorities
-		pub Authorities get(authorities): Vec<T::AuthorityId>;
+		pub Authorities get(fn authorities): Vec<T::AuthorityId>;
 	}
 	add_extra_genesis {
 		config(authorities): Vec<T::AuthorityId>;
@@ -177,9 +177,13 @@ impl<T: Trait> Module<T> {
 	fn initialize_authorities(authorities: &[T::AuthorityId]) {
 		if !authorities.is_empty() {
 			assert!(<Authorities<T>>::get().is_empty(), "Authorities are already initialized!");
-			<Authorities<T>>::put_ref(authorities);
+			<Authorities<T>>::put(authorities);
 		}
 	}
+}
+
+impl<T: Trait> sr_primitives::BoundToRuntimeAppPublic for Module<T> {
+	type Public = T::AuthorityId;
 }
 
 impl<T: Trait> session::OneSessionHandler<T::AccountId> for Module<T> {

@@ -113,7 +113,7 @@ mod extension;
 
 pub use chain_spec::{ChainSpec, Properties, NoExtension};
 pub use extension::{Group, Fork, Forks, Extension};
-pub use chain_spec_derive::{ChainSpecExtension, ChainSpecGroup};
+pub use substrate_chain_spec_derive::{ChainSpecExtension, ChainSpecGroup};
 
 use serde::{Serialize, de::DeserializeOwned};
 use sr_primitives::BuildStorage;
@@ -121,4 +121,3 @@ use sr_primitives::BuildStorage;
 /// A set of traits for the runtime genesis config.
 pub trait RuntimeGenesis: Serialize + DeserializeOwned + BuildStorage {}
 impl<T: Serialize + DeserializeOwned + BuildStorage> RuntimeGenesis for T {}
-

@@ -30,10 +30,18 @@ use primitives::offchain::{
 	Externalities as OffchainExt, HttpRequestId, Timestamp, HttpRequestStatus, HttpError,
 	OpaqueNetworkState, OpaquePeerId, OpaqueMultiaddr, StorageKind,
 };
+pub use offchain_primitives::STORAGE_PREFIX;
 use sr_primitives::{generic::BlockId, traits::{self, Extrinsic}};
 use transaction_pool::txpool::{Pool, ChainApi};
 
+#[cfg(not(target_os = "unknown"))]
 mod http;
+
+#[cfg(target_os = "unknown")]
+use http_dummy as http;
+#[cfg(target_os = "unknown")]
+mod http_dummy;
+
 mod timestamp;
 
 /// A message between the offchain extension and the processing thread.
@@ -64,7 +72,6 @@ fn unavailable_yet<R: Default>(name: &str) -> R {
 }
 
 const LOCAL_DB: &str = "LOCAL (fork-aware) DB";
-const STORAGE_PREFIX: &[u8] = b"storage";
 
 impl<Storage, Block> OffchainExt for Api<Storage, Block>
 where
@@ -302,29 +309,28 @@ impl<A: ChainApi> AsyncApi<A> {
 			match msg {
 				ExtMessage::SubmitExtrinsic(ext) => self.submit_extrinsic(ext),
 			}
-			future::ready(())
 		});
 
 		future::join(extrinsics, http)
 			.map(|((), ())| ())
 	}
 
-	fn submit_extrinsic(&mut self, ext: Vec<u8>) {
+	fn submit_extrinsic(&mut self, ext: Vec<u8>) -> impl Future<Output = ()> {
 		let xt = match <A::Block as traits::Block>::Extrinsic::decode(&mut &*ext) {
 			Ok(xt) => xt,
 			Err(e) => {
 				warn!("Unable to decode extrinsic: {:?}: {}", ext, e.what());
-				return
+				return future::Either::Left(future::ready(()))
 			},
 		};
 
-		info!("Submitting to the pool: {:?} (isSigned: {:?})", xt, xt.is_signed());
-		match self.transaction_pool.submit_one(&self.at, xt.clone()) {
-			Ok(hash) => debug!("[{:?}] Offchain transaction added to the pool.", hash),
-			Err(e) => {
-				debug!("Couldn't submit transaction: {:?}", e);
-			},
-		}
+		info!("Submitting transaction to the pool: {:?} (isSigned: {:?})", xt, xt.is_signed());
+		future::Either::Right(self.transaction_pool
+			.submit_one(&self.at, xt.clone())
+			.map(|result| match result {
+				Ok(hash) => { debug!("[{:?}] Offchain transaction added to the pool.", hash); },
+				Err(e) => { warn!("Couldn't submit offchain transaction: {:?}", e); },
+			}))
 	}
 }
 
@@ -354,7 +360,7 @@ mod tests {
 		let db = LocalStorage::new_test();
 		let client = Arc::new(test_client::new());
 		let pool = Arc::new(
-			Pool::new(Default::default(), transaction_pool::ChainApi::new(client.clone()))
+			Pool::new(Default::default(), transaction_pool::FullChainApi::new(client.clone()))
 		);
 
 		let mock = Arc::new(MockNetworkStateInfo());

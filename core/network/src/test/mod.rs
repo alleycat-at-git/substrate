@@ -47,7 +47,7 @@ use consensus::Error as ConsensusError;
 use consensus::{BlockOrigin, ForkChoiceStrategy, BlockImportParams, BlockCheckParams, JustificationImport};
 use futures::prelude::*;
 use futures03::{StreamExt as _, TryStreamExt as _};
-use crate::{NetworkWorker, NetworkService, config::ProtocolId};
+use crate::{NetworkWorker, NetworkService, ReportHandle, config::ProtocolId};
 use crate::config::{NetworkConfiguration, TransportConfig, BoxFinalityProofRequestBuilder};
 use libp2p::PeerId;
 use parking_lot::Mutex;
@@ -96,6 +96,7 @@ impl<B: BlockT> Verifier<B> for PassThroughVerifier {
 			post_digests: vec![],
 			auxiliary: Vec::new(),
 			fork_choice: ForkChoiceStrategy::LongestChain,
+			allow_missing_state: false,
 		}, maybe_keys))
 	}
 }
@@ -123,11 +124,6 @@ impl NetworkSpecialization<Block> for DummySpecialization {
 		_ctx: &mut dyn Context<Block>,
 		_peer_id: PeerId,
 		_message: Vec<u8>,
-	) {}
-
-	fn on_event(
-		&mut self,
-		_event: crate::specialization::Event
 	) {}
 }
 
@@ -379,16 +375,10 @@ impl<D, S: NetworkSpecialization<Block>> Peer<D, S> {
 		}
 	}
 
-	/// Count the current number of known blocks. Note that:
-	///  1. this might be expensive as it creates an in-memory-copy of the chain
-	///     to count the blocks, thus if you have a different way of testing this
-	///     (e.g. `info.best_hash`) - use that.
-	///  2. This is not always increasing nor accurate, as the
-	///     orphaned and proven-to-never-finalized blocks may be pruned at any time.
-	///     Therefore, this number can drop again.
-	pub fn blocks_count(&self) -> usize {
+	/// Count the total number of imported blocks.
+	pub fn blocks_count(&self) -> u64 {
 		self.backend.as_ref().map(
-			|backend| backend.as_in_memory().blockchain().blocks_count()
+			|backend| backend.blocks_count()
 		).unwrap_or(0)
 	}
 }
@@ -400,9 +390,18 @@ impl TransactionPool<Hash, Block> for EmptyTransactionPool {
 		Vec::new()
 	}
 
-	fn import(&self, _transaction: &Extrinsic) -> Option<Hash> {
-		None
+	fn hash_of(&self, _transaction: &Extrinsic) -> Hash {
+		Hash::default()
 	}
+
+	fn import(
+		&self,
+		_report_handle: ReportHandle,
+		_who: PeerId,
+		_rep_change_good: i32,
+		_rep_change_bad: i32,
+		_transaction: Extrinsic
+	) {}
 
 	fn on_broadcasted(&self, _: HashMap<Hash, Vec<String>>) {}
 }
@@ -522,9 +521,16 @@ pub trait TestNetFactory: Sized {
 		net
 	}
 
-	/// Add a full peer.
 	fn add_full_peer(&mut self, config: &ProtocolConfig) {
-		let test_client_builder = TestClientBuilder::with_default_backend();
+		self.add_full_peer_with_states(config, None)
+	}
+
+	/// Add a full peer.
+	fn add_full_peer_with_states(&mut self, config: &ProtocolConfig, keep_blocks: Option<u32>) {
+		let test_client_builder = match keep_blocks {
+			Some(keep_blocks) => TestClientBuilder::with_pruning_window(keep_blocks),
+			None => TestClientBuilder::with_default_backend(),
+		};
 		let backend = test_client_builder.backend();
 		let (c, longest_chain) = test_client_builder.build_with_longest_chain();
 		let client = Arc::new(c);
@@ -682,7 +688,7 @@ pub trait TestNetFactory: Sized {
 			if peer.is_major_syncing() || peer.network.num_queued_blocks() != 0 {
 				return Async::NotReady
 			}
-			match (highest, peer.client.info().chain.best_number) {
+			match (highest, peer.client.info().chain.best_hash) {
 				(None, b) => highest = Some(b),
 				(Some(ref a), ref b) if a == b => {},
 				(Some(_), _) => return Async::NotReady,
@@ -702,7 +708,9 @@ pub trait TestNetFactory: Sized {
 	fn poll(&mut self) {
 		self.mut_peers(|peers| {
 			for peer in peers {
+				trace!(target: "sync", "-- Polling {}", peer.id());
 				peer.network.poll().unwrap();
+				trace!(target: "sync", "-- Polling complete {}", peer.id());
 
 				// We poll `imported_blocks_stream`.
 				while let Ok(Async::Ready(Some(notification))) = peer.imported_blocks_stream.poll() {

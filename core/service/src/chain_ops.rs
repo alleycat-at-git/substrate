@@ -21,6 +21,7 @@ use chain_spec::{ChainSpec, RuntimeGenesis, Extension};
 
 /// Defines the logic for an operation exporting blocks within a range.
 #[macro_export]
+/// Export blocks
 macro_rules! export_blocks {
 ($client:ident, $exit:ident, $output:ident, $from:ident, $to:ident, $json:ident) => {{
 	let mut block = $from;
@@ -45,7 +46,7 @@ macro_rules! export_blocks {
 		let last_: u64 = last.saturated_into::<u64>();
 		let block_: u64 = block.saturated_into::<u64>();
 		let len: u64 = last_ - block_ + 1;
-		$output.write(&len.encode())?;
+		$output.write_all(&len.encode())?;
 	}
 
 	loop {
@@ -58,7 +59,7 @@ macro_rules! export_blocks {
 					serde_json::to_writer(&mut $output, &block)
 						.map_err(|e| format!("Error writing JSON: {}", e))?;
 				} else {
-					$output.write(&block.encode())?;
+					$output.write_all(&block.encode())?;
 				}
 			},
 			None => break,
@@ -77,6 +78,7 @@ macro_rules! export_blocks {
 
 /// Defines the logic for an operation importing blocks from some known import.
 #[macro_export]
+/// Import blocks
 macro_rules! import_blocks {
 ($block:ty, $client:ident, $queue:ident, $exit:ident, $input:ident) => {{
 	use consensus_common::import_queue::{IncomingBlock, Link, BlockImportError, BlockImportResult};
@@ -120,7 +122,7 @@ macro_rules! import_blocks {
 	}
 
 	let (exit_send, exit_recv) = std::sync::mpsc::channel();
-	::std::thread::spawn(move || {
+	std::thread::spawn(move || {
 		let _ = $exit.wait();
 		let _ = exit_send.send(());
 	});
@@ -154,6 +156,7 @@ macro_rules! import_blocks {
 						body: block.body,
 						justification: block.justification,
 						origin: None,
+						allow_missing_state: false,
 					}
 				]);
 			}
