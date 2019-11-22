@@ -28,7 +28,7 @@ use std::{
 use error_chain::bail;
 use log::{trace, debug, warn};
 use serde::Serialize;
-use substrate_primitives::hexdisplay::HexDisplay;
+use substrate_primitives::{hexdisplay::HexDisplay, QUEUE_TAG};
 use sr_primitives::traits::Member;
 use sr_primitives::transaction_validity::{
 	TransactionTag as Tag,
@@ -345,6 +345,27 @@ impl<Hash: hash::Hash + Member + Serialize, Ex: ::std::fmt::Debug> BasePool<Hash
 		}
 
 		removed
+	}
+
+	/// Move transactions that missed it's queue (odd / even)
+	/// in the previous block to ready status.
+	pub fn import_queue_futures(&mut self) {
+		// Provide tag and return only those transactions that
+		// are cleared to go by this tag
+		let to_import = self
+			.future
+			.satisfy_tags(vec![QUEUE_TAG.to_vec()].into_iter());
+		let mut requeued = 0;
+		let requeued_total = to_import.len();
+		for tx in to_import {
+			let hash = tx.transaction.hash.clone();
+			// Import tx and its dependencies if necessary
+			match self.import_to_ready(tx) {
+				Err(e) => warn!(target: "txpool", "[{:?}] Failed to promote requeue special futures: {:?}", hash, e),
+				_ => requeued += 1,
+			};
+		}
+		debug!(target: "txpool", "Requeued {}/{} transactions from futures", requeued, requeued_total);
 	}
 
 	/// Removes all transactions represented by the hashes and all other transactions

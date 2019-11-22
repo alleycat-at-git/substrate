@@ -76,6 +76,9 @@ pub use hash_db::Hasher;
 // pub use self::hasher::blake::BlakeHasher;
 pub use self::hasher::blake2::Blake2Hasher;
 
+/// Tag that withholds transactions if they miss odd / even queue.
+pub const QUEUE_TAG: &[u8] = &[0];
+
 /// Context for executing a call into the runtime.
 #[repr(u8)]
 pub enum ExecutionContext {

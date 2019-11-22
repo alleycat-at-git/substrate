@@ -258,7 +258,7 @@ impl<Block, C, A> Proposer<Block, C, A>	where
 
 				self.transaction_pool.remove_invalid(&unqueue_invalid);
 			})?;
-
+		self.transaction_pool.import_queue_futures();
 		info!("Prepared block for proposing at {} [hash: {:?}; parent_hash: {}; extrinsics: [{}]]",
 			block.header().number(),
 			<<C as AuthoringApi>::Block as BlockT>::Hash::from(block.header().hash()),
